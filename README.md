@@ -1,0 +1,1 @@
+ConsoleApp1azure-app-configuration
