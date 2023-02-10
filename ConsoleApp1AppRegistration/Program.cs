@@ -5,23 +5,54 @@ using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using System.Runtime.ConstrainedExecution;
+using Microsoft.Extensions.Hosting;
+using System.Reflection;
+using CommandLine;
+using Microsoft.Extensions.DependencyInjection;
+using AppRegistrationClassLibrary;
 
 Console.WriteLine("Hello, World!");
 
-var configurationBuilder = new ConfigurationBuilder();
-configurationBuilder.AddJsonFile("appsettings.json");
+var parseArgumentsOptions = Parser.Default.ParseArguments<ArgumentParserOptions>(args).Value ?? new ArgumentParserOptions();
+var appsettingsFile = parseArgumentsOptions.AppSettingsConfig ?? "appsettings.json";
 
-var configurationRoot= configurationBuilder.Build();
-var clientid = configurationRoot.GetSection("AzureAd").GetValue<string>("ClientId");
-var clientSecret = configurationRoot.GetValue<string>("AzureAd:Secret");
-var tenantid = configurationRoot.GetValue<string>("AzureAd:TenantId");
+var hostApplicationBuilder = Host.CreateDefaultBuilder(args);
+hostApplicationBuilder.ConfigureAppConfiguration((context, configurationBuilder) =>
+{
+    var location = Assembly.GetExecutingAssembly().Location;
+    var basepath = Path.GetDirectoryName(location) ?? throw new InvalidOperationException($"{nameof(Path.GetDirectoryName)} is expected to return a value with parameter GetExecutingAssembly location");
+    configurationBuilder.SetBasePath(basepath).AddJsonFile(appsettingsFile, true, true);
+
+});
+hostApplicationBuilder.ConfigureServices((hostApplicationBuilder, serviceCollection) =>
+{
+    serviceCollection.Configure<AppRegistrationConfiguration>(options => hostApplicationBuilder.Configuration.GetSection("AzureAd").Bind(options));
+
+    serviceCollection.AddSingleton<AppRegistrationAccessTokenService>();
+
+    serviceCollection.AddSingleton<AppRegistrationCredentialsManager>();
+});
 
 
-var accessToken =await GetAccessTokenByScopeAsync(tenantid, "https://graph.microsoft.com/.default", clientid, clientSecret);
-await GetApplicationsByGraphApiAsync(accessToken);
+var host = hostApplicationBuilder.Build();
+
+
+var appRegistrationAccessTokenService = host.Services.GetRequiredService<AppRegistrationAccessTokenService>();
+
+
+var token = await appRegistrationAccessTokenService.GetAccessTokenAsync("https://graph.microsoft.com/.default");
+
+//await GetApplicationsByGraphApiAsync(token.AccessToken);
+
+var appRegistrationCredentialsManager = host.Services.GetRequiredService<AppRegistrationCredentialsManager>();
+
+var applications = await appRegistrationCredentialsManager.GetAppRegistration();
+
+ShowAppInfo(applications);
+await appRegistrationCredentialsManager.AddSecretAsync(applications.First());
+ShowAppInfo(applications);
 
 Console.ReadLine();
-
 
 async Task<AccessToken> GetAccessTokenByScopeAsync(string tenantid, string scope, string clientId, string registeredAppSecrect)
 {
@@ -39,9 +70,12 @@ async Task<AccessToken> GetAccessTokenByScopeAsync(string tenantid, string scope
     if (tokenResponse == null) throw new InvalidOperationException($"{nameof(TokenResponse)} expected!");
     return new AccessToken(tokenResponse.access_token, DateTimeOffset.Now + TimeSpan.FromSeconds(tokenResponse.expires_in));
 }
-async Task GetApplicationsByGraphApiAsync(AccessToken accessToken)
+
+
+
+async Task GetApplicationsByGraphApiAsync(string accessToken)
 {
-    if (DateTimeOffset.Now > accessToken.ExpiresOn)
+    //if (DateTimeOffset.Now > accessToken.ExpiresOn)
     {
         //call again GetAccessTokenByScopeAsync
     }
@@ -51,7 +85,7 @@ async Task GetApplicationsByGraphApiAsync(AccessToken accessToken)
     {
         httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
     }
-    defaultRequetHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken.Token);
+    defaultRequetHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
     var responseMessage = await httpClient.GetAsync($"https://graph.microsoft.com/v1.0/applications/");
     var outputString = await responseMessage.Content.ReadAsStringAsync();
     using var jDoc = JsonDocument.Parse(outputString);
@@ -66,6 +100,25 @@ async Task GetApplicationsByGraphApiAsync(AccessToken accessToken)
     //responseMessage = await httpClient.GetAsync($"https://graph.microsoft.com/v1.0/me/");
     //outputString = await responseMessage.Content.ReadAsStringAsync();
     //Console.WriteLine(outputString);
+}
+
+static void ShowAppInfo(IEnumerable<Microsoft.Graph.Application> applications)
+{
+    foreach (var app in applications)
+    {
+        Console.WriteLine();
+        Console.WriteLine(app.DisplayName);
+        //Console.WriteLine("KeyCredentials");
+        //foreach (var keyCredential in app.KeyCredentials)
+        //{
+        //    Console.WriteLine(keyCredential.DisplayName);
+        //}
+        Console.WriteLine("PasswordCredentials:");
+        foreach (var passwordCredential in app.PasswordCredentials)
+        {
+            Console.WriteLine($"{passwordCredential.DisplayName} {passwordCredential.StartDateTime}-{passwordCredential.EndDateTime}");
+        }
+    }
 }
 /// <summary>
 /// https://docs.microsoft.com/en-us/graph/auth-v2-service#token-response
