@@ -26,10 +26,12 @@ hostApplicationBuilder.ConfigureAppConfiguration((context, configurationBuilder)
 });
 hostApplicationBuilder.ConfigureServices((hostApplicationBuilder, serviceCollection) =>
 {
-    serviceCollection.Configure<AppRegistrationConfiguration>(options => hostApplicationBuilder.Configuration.GetSection("AzureAd").Bind(options));
-
+    serviceCollection.Configure<AppRegistrationConfiguration>(options =>
+        hostApplicationBuilder.Configuration.GetSection("AzureAd").Bind(options));
     serviceCollection.AddSingleton<AppRegistrationAccessTokenService>();
 
+    serviceCollection.Configure<AppRegistrationCredentialsManagerConfiguration>(options =>
+        hostApplicationBuilder.Configuration.GetSection("AppRegistrationCredentialsManager").Bind(options));
     serviceCollection.AddSingleton<AppRegistrationCredentialsManager>();
 });
 
@@ -45,6 +47,7 @@ var token = await appRegistrationAccessTokenService.GetAccessTokenAsync("https:/
 //await GetApplicationsByGraphApiAsync(token.AccessToken);
 
 var appRegistrationCredentialsManager = host.Services.GetRequiredService<AppRegistrationCredentialsManager>();
+
 
 var applications = await appRegistrationCredentialsManager.GetAppRegistration();
 
@@ -116,7 +119,7 @@ static void ShowAppInfo(IEnumerable<Microsoft.Graph.Application> applications)
         Console.WriteLine("PasswordCredentials:");
         foreach (var passwordCredential in app.PasswordCredentials)
         {
-            Console.WriteLine($"{passwordCredential.DisplayName} {passwordCredential.StartDateTime}-{passwordCredential.EndDateTime}");
+            Console.WriteLine($"{passwordCredential.DisplayName} {passwordCredential.StartDateTime}-{passwordCredential.EndDateTime} KeyId-{passwordCredential.KeyId}");
         }
     }
 }
