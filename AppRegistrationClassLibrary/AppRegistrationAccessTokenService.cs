@@ -1,5 +1,6 @@
 ﻿using Azure.Core;
 using Azure.Identity;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Identity.Client;
 using System;
@@ -16,10 +17,12 @@ namespace AppRegistrationClassLibrary
     {
         private const string CertificateDesicriptionEmptyExceptionMessage = "Either set the value Secret or CertificateDescription. None of them was set!";
         private readonly IOptionsMonitor<AppRegistrationConfiguration> appRegistrationConfiguration;
+        private readonly ILogger<AppRegistrationAccessTokenService> logger;
         private IConfidentialClientApplication? confidentialClientApplication;
 
-        public AppRegistrationAccessTokenService(IOptionsMonitor<AppRegistrationConfiguration> appRegistrationConfiguration)
+        public AppRegistrationAccessTokenService(IOptionsMonitor<AppRegistrationConfiguration> appRegistrationConfiguration, ILogger<AppRegistrationAccessTokenService> logger)
         {
+            this.logger = logger;
             this.appRegistrationConfiguration = appRegistrationConfiguration;
             appRegistrationConfiguration.OnChange(ConfigurationChanged);
         }
@@ -27,6 +30,7 @@ namespace AppRegistrationClassLibrary
 
         private IConfidentialClientApplication BuildConfigdentialClientApplication()
         {
+            logger.LogTrace($"Generating new ConfidentialClientApplication instance");
             var confidentialClientApplicationBuilder = ConfidentialClientApplicationBuilder
                 .Create(appRegistrationConfiguration.CurrentValue.ClientId)
                 .WithTenantId(appRegistrationConfiguration.CurrentValue.TenantId);
@@ -41,6 +45,7 @@ namespace AppRegistrationClassLibrary
             {
                 confidentialClientApplicationBuilder.WithClientSecret(appRegistrationConfiguration.CurrentValue.Secret);
                 confidentialClientApplication = confidentialClientApplicationBuilder.Build();
+                logger.LogTrace("confidentialClientApplication ClientSecrect using {secrect}", appRegistrationConfiguration.CurrentValue.Secret.ObscureSecret());
             }
             else //not tested
             {
@@ -88,6 +93,7 @@ namespace AppRegistrationClassLibrary
                 // https://learn.microsoft.com/dotnet/api/azure.identity.clientsecretcredential
                 tokenCredential = new ClientSecretCredential(
                 tenantId, clientId, clientSecret, options);
+                logger.LogTrace("TokenCredential generated ClientSecrect using {secrect}", clientSecret.ObscureSecret());
             }
             else
             {
@@ -149,6 +155,14 @@ namespace AppRegistrationClassLibrary
 
         public AppRegistrationConfiguration AppRegistrationConfiguration
             => appRegistrationConfiguration.CurrentValue;
+
+        public void UpdateSecrect(string newSecret)
+        {
+            appRegistrationConfiguration.CurrentValue.Secret = newSecret;
+            //set to null to force the creation of a new confidentialClientApplication
+            confidentialClientApplication = null;
+            logger.LogTrace("New {newSecret}", newSecret.ObscureSecret());
+        }
 
         private void ConfigurationChanged(AppRegistrationConfiguration appRegistrationConfiguration, string? changed)
         {

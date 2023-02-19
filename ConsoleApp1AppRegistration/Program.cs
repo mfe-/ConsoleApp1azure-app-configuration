@@ -10,6 +10,7 @@ using System.Reflection;
 using CommandLine;
 using Microsoft.Extensions.DependencyInjection;
 using AppRegistrationClassLibrary;
+using Microsoft.Extensions.Logging;
 
 Console.WriteLine("Hello, World!");
 
@@ -26,34 +27,40 @@ hostApplicationBuilder.ConfigureAppConfiguration((context, configurationBuilder)
 });
 hostApplicationBuilder.ConfigureServices((hostApplicationBuilder, serviceCollection) =>
 {
+    serviceCollection.AddLogging(loggerbuilder=>
+    {
+        loggerbuilder.AddConsole();
+    });
     serviceCollection.Configure<AppRegistrationConfiguration>(options =>
         hostApplicationBuilder.Configuration.GetSection("AzureAd").Bind(options));
     serviceCollection.AddSingleton<AppRegistrationAccessTokenService>();
 
     serviceCollection.Configure<AppRegistrationCredentialsManagerConfiguration>(options =>
-        hostApplicationBuilder.Configuration.GetSection("AppRegistrationCredentialsManager").Bind(options));
+        hostApplicationBuilder.Configuration.GetSection(nameof(AppRegistrationCredentialsManagerConfiguration)).Bind(options));
     serviceCollection.AddSingleton<AppRegistrationCredentialsManager>();
 });
+
 
 
 var host = hostApplicationBuilder.Build();
 
 
-var appRegistrationAccessTokenService = host.Services.GetRequiredService<AppRegistrationAccessTokenService>();
+//var appRegistrationAccessTokenService = host.Services.GetRequiredService<AppRegistrationAccessTokenService>();
 
 
-var token = await appRegistrationAccessTokenService.GetAccessTokenAsync("https://graph.microsoft.com/.default");
+//var token = await appRegistrationAccessTokenService.GetAccessTokenAsync("https://graph.microsoft.com/.default");
 
 //await GetApplicationsByGraphApiAsync(token.AccessToken);
 
 var appRegistrationCredentialsManager = host.Services.GetRequiredService<AppRegistrationCredentialsManager>();
 
+await appRegistrationCredentialsManager.KeepCredentialsUpToDateAsync();
 
-var applications = await appRegistrationCredentialsManager.GetAppRegistration();
+//var applications = await appRegistrationCredentialsManager.GetAppRegistration();
 
-ShowAppInfo(applications);
-await appRegistrationCredentialsManager.AddSecretAsync(applications.First());
-ShowAppInfo(applications);
+//ShowAppInfo(applications);
+//await appRegistrationCredentialsManager.AddSecretAsync(applications.First());
+//ShowAppInfo(applications);
 
 Console.ReadLine();
 
